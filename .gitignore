@@ -116,3 +116,12 @@ target/
 !config_examples/config_freqai.example.json
 
 docker-compose-*.yml
+
+!user_data/config/
+!user_data/config/*.json
+
+!user_data/pine_scripts/
+!user_data/pine_scripts/*.pine
+
+!user_data/strategies/
+!user_data/strategies/*.py

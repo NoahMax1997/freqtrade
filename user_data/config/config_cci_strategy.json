@@ -1,0 +1,114 @@
+{
+    "trading_mode": "futures",
+    "margin_mode": "isolated",
+    "max_open_trades": 3,
+    "stake_currency": "USDT",
+    "stake_amount": "unlimited",
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "USD",
+    "dry_run": true,
+    "dry_run_wallet": 10000,
+    "cancel_open_orders_on_exit": false,
+    "process_only_new_candles": true,
+    "timeframe": "1d",
+    "dataformat_ohlcv": "json",
+    "strategy": "MomentumCCITrendStrategy",
+    "strategy_path": "user_data/strategies/",
+    "startup_candle_count": 100,
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "price_last_balance": 0.0,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "exchange": {
+        "name": "binance",
+        "key": "",
+        "secret": "",
+        "ccxt_config": {},
+        "ccxt_async_config": {},
+        "pair_whitelist": [
+            "BTC/USDT:USDT",
+            "ETH/USDT:USDT",
+            "BNB/USDT:USDT",
+            "ADA/USDT:USDT",
+            "DOT/USDT:USDT",
+            "XRP/USDT:USDT",
+            "LTC/USDT:USDT",
+            "LINK/USDT:USDT",
+            "BCH/USDT:USDT",
+            "VET/USDT:USDT"
+        ],
+        "pair_blacklist": [
+            ".*_PREMIUM",
+            ".*DOWN/.*",
+            ".*UP/.*",
+            ".*BEAR/.*",
+            ".*BULL/.*"
+        ]
+    },
+    "pairlists": [
+        {
+            "method": "StaticPairList"
+        }
+    ],
+    "telegram": {
+        "enabled": false,
+        "token": "",
+        "chat_id": "",
+        "notification_settings": {
+            "status": "off",
+            "warning": "off",
+            "startup": "off",
+            "entry": "off",
+            "entry_fill": "off",
+            "entry_cancel": "off",
+            "exit": "off",
+            "exit_fill": "off",
+            "exit_cancel": "off",
+            "protection_trigger": "off",
+            "protection_trigger_global": "off",
+            "show_candle": "off",
+            "strategy_msg": "off"
+        },
+        "reload": true,
+        "balance_dust_level": 0.01
+    },
+    "api_server": {
+        "enabled": false,
+        "listen_ip_address": "127.0.0.1",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "enable_openapi": false,
+        "jwt_secret_key": "",
+        "jwt_secret_key_comment": "Use a local secret, do not commit real values.",
+        "ws_token": "",
+        "ws_token_comment": "Use a local secret, do not commit real values.",
+        "CORS_origins": [],
+        "username": "",
+        "password": ""
+    },
+    "bot_name": "CCITrendBot",
+    "initial_state": "running",
+    "force_entry_enable": false,
+    "internals": {
+        "process_throttle_secs": 5
+    },
+    "logfile": "logs/freqtrade_cci.log",
+    "user_data_dir": "user_data"
+} 

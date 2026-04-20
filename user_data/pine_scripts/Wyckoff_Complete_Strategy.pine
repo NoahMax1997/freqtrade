@@ -1,0 +1,199 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// Wyckoff-style multi-setup strategy for TradingView — educational / backtest use.
+//@version=5
+strategy(
+     title                 = "Wyckoff Complete (Spring · UTAD · SOS · LPS)",
+     shorttitle            = "Wyckoff",
+     overlay               = true,
+     pyramiding            = 0,
+     calc_on_every_tick    = false,
+     initial_capital       = 100000,
+     default_qty_type      = strategy.percent_of_equity,
+     default_qty_value     = 10,
+     commission_type       = strategy.commission.percent,
+     commission_value      = 0.05,
+     slippage              = 2
+ )
+
+// ——————————————————————————————————————————————————————————————
+// 输入参数
+// ——————————————————————————————————————————————————————————————
+var string G_RANGE = "区间与背景"
+rangeLen       = input.int(24, "区间长度（K 线数）", minval = 8, maxval = 200, group = G_RANGE)
+minRangePct    = input.float(0.35, "最小区间宽度（占价 %）", minval = 0.05, step = 0.05, group = G_RANGE)
+maxRangePct    = input.float(12.0, "最大区间宽度（占价 %）", minval = 0.5, step = 0.5, group = G_RANGE)
+
+var string G_TREND = "趋势背景（简化）"
+emaFast        = input.int(21, "快线 EMA", minval = 5, group = G_TREND)
+emaSlow        = input.int(55, "慢线 EMA", minval = 10, group = G_TREND)
+emaMacro       = input.int(200, "宏观 EMA（牛熊过滤）", minval = 50, group = G_TREND)
+useMacroFilter = input.bool(true, "启用宏观过滤（弹簧仅偏空背景，上冲仅偏多背景）", group = G_TREND)
+
+var string G_VOL = "成交量"
+volLen         = input.int(20, "均量周期", minval = 5, group = G_VOL)
+springVolMult  = input.float(1.15, "弹簧 / UTAD：相对均量倍数", minval = 1.0, step = 0.05, group = G_VOL)
+sosVolMult     = input.float(1.35, "SOS：相对均量倍数", minval = 1.0, step = 0.05, group = G_VOL)
+
+var string G_SPRING = "弹簧 Spring（假跌破做多）"
+useSpring      = input.bool(true, "启用弹簧", group = G_SPRING)
+springBodyMin  = input.float(0.15, "收盘需收复下轨的最小比例（区间宽 %）", minval = 0.0, step = 0.05, group = G_SPRING)
+
+var string G_UTAD = "上冲 UTAD（假突破做空）"
+useUtad        = input.bool(true, "启用 UTAD", group = G_UTAD)
+utadBodyMin    = input.float(0.15, "收盘需跌回上轨内的最小比例（区间宽 %）", minval = 0.0, step = 0.05, group = G_UTAD)
+
+var string G_SOS = "SOS 突破"
+useSos         = input.bool(true, "启用 SOS 顺势突破", group = G_SOS)
+sosNeedVol     = input.bool(true, "SOS 要求放量", group = G_SOS)
+
+var string G_LPS = "LPS 回踩（SOS 后）"
+useLps         = input.bool(true, "启用 LPS 回踩做多", group = G_LPS)
+lpsMaxBars     = input.int(12, "SOS 后最多等待 K 线数", minval = 3, maxval = 50, group = G_LPS)
+lpsTouchPct    = input.float(0.25, "回踩触及原区间上沿的容忍（区间宽 %）", minval = 0.05, step = 0.05, group = G_LPS)
+
+var string G_RISK = "风控与出场"
+atrLen         = input.int(14, "ATR 周期", minval = 5, group = G_RISK)
+stopAtrMult    = input.float(1.25, "止损：ATR 倍数", minval = 0.25, step = 0.05, group = G_RISK)
+tpRr           = input.float(2.0, "止盈：风险回报比（相对止损距离）", minval = 0.5, step = 0.25, group = G_RISK)
+useTrailing    = input.bool(false, "盈利后启用 ATR 跟踪止损", group = G_RISK)
+trailAtrMult   = input.float(2.0, "跟踪止损 ATR 倍数", minval = 0.5, step = 0.1, group = G_RISK)
+
+// ——————————————————————————————————————————————————————————————
+// 区间（用上一根已收盘区间，减轻重绘）
+// ——————————————————————————————————————————————————————————————
+float boxHigh = ta.highest(high, rangeLen)[1]
+float boxLow  = ta.lowest(low, rangeLen)[1]
+float boxMid  = (boxHigh + boxLow) * 0.5
+float boxW    = boxHigh - boxLow
+float boxWPct = boxW > 0 ? boxW / close * 100.0 : 0.0
+
+bool rangeOk =
+     boxWPct >= minRangePct and
+     boxWPct <= maxRangePct and
+     boxW > syminfo.mintick * 2.0
+
+float vAvg = ta.sma(volume, volLen)
+
+// 宏观：价在长期均线上方视为多头延伸（派发候选），下方视为空头延伸（吸筹候选）
+bool belowMacro = close < ta.ema(close, emaMacro)
+bool aboveMacro = close > ta.ema(close, emaMacro)
+
+bool emaUp = ta.ema(close, emaFast) > ta.ema(close, emaSlow)
+
+// ——————————————————————————————————————————————————————————————
+// 形态识别
+// ——————————————————————————————————————————————————————————————
+float springTh = boxW * (springBodyMin / 100.0)
+// 弹簧：刺破下轨，收盘明显回到区间内（偏吸筹背景）
+bool springRaw =
+     low < boxLow and
+     close > boxLow + springTh and
+     close < boxHigh and
+     close > open
+
+bool springVolOk = volume >= vAvg * springVolMult
+bool spring = useSpring and rangeOk and springRaw and springVolOk and (not useMacroFilter or belowMacro)
+
+float utadTh = boxW * (utadBodyMin / 100.0)
+// UTAD：刺破上轨，收盘跌回区间内（偏派发背景）
+bool utadRaw =
+     high > boxHigh and
+     close < boxHigh - utadTh and
+     close > boxLow and
+     close < open
+
+bool utadVolOk = volume >= vAvg * springVolMult
+bool utad = useUtad and rangeOk and utadRaw and utadVolOk and (not useMacroFilter or aboveMacro)
+
+// SOS：收盘突破区间上沿（可选放量）；空头 SOS：跌破下沿
+bool volSosLong  = not sosNeedVol or volume >= vAvg * sosVolMult
+bool sosBreakUp  = useSos and rangeOk and close > boxHigh and close[1] <= boxHigh and volSosLong
+bool volSosShort = not sosNeedVol or volume >= vAvg * sosVolMult
+bool sosBreakDn  = useSos and rangeOk and close < boxLow and close[1] >= boxLow and volSosShort
+
+// 记录最近一次多头 SOS，供 LPS（保存当时区间宽度，避免用当前 box 变形）
+var int   lastSosBar = na
+var float lastSosBoxHigh = na
+var float lastSosBoxLow = na
+var float lastSosBoxW = na
+
+if sosBreakUp
+    lastSosBar     := bar_index
+    lastSosBoxHigh := boxHigh
+    lastSosBoxLow  := boxLow
+    lastSosBoxW    := boxW
+else if not na(lastSosBar) and (bar_index - lastSosBar > lpsMaxBars or sosBreakDn or utad)
+    lastSosBar     := na
+    lastSosBoxHigh := na
+    lastSosBoxLow  := na
+    lastSosBoxW    := na
+
+float touchLo = lastSosBoxHigh - (na(lastSosBoxW) ? boxW : lastSosBoxW) * (lpsTouchPct / 100.0)
+int   barsFromSos = not na(lastSosBar) ? bar_index - lastSosBar : 999999
+
+// LPS：多头 SOS 后，回踩原阻力（现支撑）附近再转强
+bool lpsRaw =
+     useLps and rangeOk and not na(lastSosBar) and
+     barsFromSos >= 1 and barsFromSos <= lpsMaxBars and
+     low <= lastSosBoxHigh and low >= touchLo and
+     close > lastSosBoxHigh and
+     close > open and
+     volume >= vAvg * 1.05
+
+bool lpsLong = lpsRaw and (not useMacroFilter or belowMacro or emaUp)
+
+// ——————————————————————————————————————————————————————————————
+// 入场
+// ——————————————————————————————————————————————————————————————
+bool longSignal  = spring or sosBreakUp or lpsLong
+bool shortSignal = utad or sosBreakDn
+
+if longSignal and strategy.position_size <= 0
+    strategy.entry("Long", strategy.long)
+
+if shortSignal and strategy.position_size >= 0
+    strategy.entry("Short", strategy.short)
+
+// ——————————————————————————————————————————————————————————————
+// 出场：ATR 止损 + RR 止盈；可选跟踪
+// ——————————————————————————————————————————————————————————————
+float atr = ta.atr(atrLen)
+
+if strategy.position_size > 0
+    float entry = strategy.position_avg_price
+    float stopL = entry - atr * stopAtrMult
+    float tpL   = entry + (entry - stopL) * tpRr
+    if useTrailing
+        strategy.exit("XL", "Long", stop = stopL, trail_offset = atr * trailAtrMult)
+    else
+        strategy.exit("XL", "Long", stop = stopL, limit = tpL)
+
+if strategy.position_size < 0
+    float entry = strategy.position_avg_price
+    float stopS = entry + atr * stopAtrMult
+    float tpS   = entry - (stopS - entry) * tpRr
+    if useTrailing
+        strategy.exit("XS", "Short", stop = stopS, trail_offset = atr * trailAtrMult)
+    else
+        strategy.exit("XS", "Short", stop = stopS, limit = tpS)
+
+// ——————————————————————————————————————————————————————————————
+// 可视化（仅用 plot 画区间边界，避免每根 box.new 堆叠数千矩形）
+// ——————————————————————————————————————————————————————————————
+plot(boxHigh, "区间上沿", color = color.new(color.teal, 0), linewidth = 1)
+plot(boxLow, "区间下沿", color = color.new(color.orange, 0), linewidth = 1)
+
+plotshape(spring, title = "Spring", style = shape.triangleup, location = location.belowbar, size = size.tiny, color = color.green, text = "Sp")
+plotshape(utad, title = "UTAD", style = shape.triangledown, location = location.abovebar, size = size.tiny, color = color.red, text = "UT")
+plotshape(sosBreakUp, title = "SOS↑", style = shape.circle, location = location.belowbar, size = size.tiny, color = color.aqua)
+plotshape(sosBreakDn, title = "SOS↓", style = shape.circle, location = location.abovebar, size = size.tiny, color = color.fuchsia)
+plotshape(lpsLong, title = "LPS", style = shape.diamond, location = location.belowbar, size = size.tiny, color = color.lime)
+
+// ——————————————————————————————————————————————————————————————
+// 警报消息（可选）
+// ——————————————————————————————————————————————————————————————
+alertcondition(spring, "弹簧 Spring", "Spring 信号")
+alertcondition(utad, "上冲 UTAD", "UTAD 信号")
+alertcondition(sosBreakUp, "SOS 向上突破", "SOS 向上突破")
+alertcondition(sosBreakDn, "SOS 向下突破", "SOS 向下突破")
+alertcondition(lpsLong, "LPS 回踩", "LPS 回踩做多")

@@ -1,0 +1,80 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// MA7 / MA25：ta.crossover(ma7,ma25) 金叉挂多，ta.crossunder 死叉挂空；反手与止盈止损 — 回测 / 研究用
+//@version=5
+strategy(
+     title                 = "MA7·25 金叉死叉限价",
+     shorttitle            = "MA Cross Limit",
+     overlay               = true,
+     pyramiding            = 0,
+     calc_on_every_tick    = false,
+     initial_capital       = 100000,
+     default_qty_type      = strategy.percent_of_equity,
+     default_qty_value     = 10,
+     commission_type       = strategy.commission.percent,
+     commission_value      = 0.05,
+     slippage              = 2
+ )
+
+// ——————————————————————————————————————————————————————————————
+// 参数
+// ——————————————————————————————————————————————————————————————
+var string G_MA = "均线"
+maFastLen   = input.int(7, "快线周期", minval = 1, group = G_MA)
+maSlowLen   = input.int(25, "慢线周期", minval = 1, group = G_MA)
+useSma      = input.bool(true, "使用 SMA（关则 EMA）", group = G_MA)
+
+var string G_RISK = "风控（相对成交价）"
+takePct     = input.float(10.0, "止盈 %", minval = 0.01, step = 0.5, group = G_RISK)
+stopPct     = input.float(5.0, "止损 %", minval = 0.01, step = 0.5, group = G_RISK)
+
+// ——————————————————————————————————————————————————————————————
+// 均线
+// ——————————————————————————————————————————————————————————————
+ma7  = useSma ? ta.sma(close, maFastLen) : ta.ema(close, maFastLen)
+ma25 = useSma ? ta.sma(close, maSlowLen) : ta.ema(close, maSlowLen)
+
+// 仅快慢均线互相穿越（与图上 MA7、MA25 交点一致）
+crossUp   = ta.crossover(ma7, ma25)
+crossDown = ta.crossunder(ma7, ma25)
+
+// ——————————————————————————————————————————————————————————————
+// 逻辑（同根 K 线：先下穿后上穿，避免同根信号打架）
+// 死叉：有多则平多，否则撤多限价；再以当根最高价挂限价空
+// 金叉：有空则平空，否则撤空限价；再以当根最低价挂限价多
+// ——————————————————————————————————————————————————————————————
+if crossDown
+    if strategy.position_size > 0
+        strategy.close("Long", comment = "死叉平多")
+    else
+        strategy.cancel("Long")
+    if strategy.position_size >= 0
+        strategy.entry("Short", strategy.short, limit = high, comment = "死叉高点限价空")
+
+if crossUp
+    if strategy.position_size < 0
+        strategy.close("Short", comment = "金叉平空")
+    else
+        strategy.cancel("Short")
+    if strategy.position_size <= 0
+        strategy.entry("Long", strategy.long, limit = low, comment = "金叉低点限价多")
+
+// 多：止盈 +%、止损 −%；空：止盈 −%、止损 +%（相对成交均价）
+if strategy.position_size > 0
+    float avgL = strategy.position_avg_price
+    float tpL  = avgL * (1.0 + takePct / 100.0)
+    float slL  = avgL * (1.0 - stopPct / 100.0)
+    strategy.exit("TP_SL_L", "Long", limit = tpL, stop = slL, comment_profit = "多止盈", comment_loss = "多止损")
+
+if strategy.position_size < 0
+    float avgS = strategy.position_avg_price
+    float tpS  = avgS * (1.0 - takePct / 100.0)
+    float slS  = avgS * (1.0 + stopPct / 100.0)
+    strategy.exit("TP_SL_S", "Short", limit = tpS, stop = slS, comment_profit = "空止盈", comment_loss = "空止损")
+
+// ——————————————————————————————————————————————————————————————
+// 图表
+// ——————————————————————————————————————————————————————————————
+plot(ma7, "MA7", color = color.new(color.teal, 0), linewidth = 2)
+plot(ma25, "MA25", color = color.new(color.orange, 0), linewidth = 2)
+plotshape(crossUp, title = "金叉 MA7>MA25", style = shape.triangleup, location = location.belowbar, size = size.tiny, color = color.new(color.green, 40))
+plotshape(crossDown, title = "死叉 MA7<MA25", style = shape.triangledown, location = location.abovebar, size = size.tiny, color = color.new(color.red, 40))

@@ -1,0 +1,157 @@
+//@version=5
+// PureSuperTrend：首次入场价 + 同趋势更优价重入（现货止损幅度可配）
+strategy(
+     "PureSuperTrend 更优价格重入",
+     overlay              = true,
+     initial_capital      = 500,
+     default_qty_type     = strategy.cash,
+     default_qty_value    = 500,
+     pyramiding           = 0,
+     calc_on_every_tick   = false,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.05
+ )
+
+// ========== 输入 ==========
+var string G_ST = "SuperTrend"
+stFactor   = input.float(5.0, "factor", minval = 0.1, step = 0.1, group = G_ST)
+stAtrLen   = input.int(96, "atrPeriod", minval = 1, group = G_ST)
+
+var string G_RISK = "止损 / 止盈（价格为现货涨跌幅）"
+// 注释：现货 -5% ≈ 5 倍杠杆下约 -25% 保证金效果（仅说明，脚本按价格百分比挂单）
+spotStopPct = input.float(0.05, "单次止损：现货幅度（如 0.05 = 5%）", minval = 0.001, step = 0.005, group = G_RISK)
+profitRate  = input.float(0.10, "可选固定止盈：现货幅度", minval = 0.0, step = 0.01, group = G_RISK)
+useProfit   = input.bool(false, "启用固定止盈", group = G_RISK)
+
+var string G_RSI = "RSI 平仓（非反转）"
+rsiLen       = input.int(14, "RSI 周期", minval = 2, group = G_RSI)
+rsiLowBound  = input.int(30, "超卖线", group = G_RSI)
+rsiHighBound = input.int(70, "超买线", group = G_RSI)
+useRsiExit   = input.bool(true, "超买/超卖回落时平仓（同趋势可重入）", group = G_RSI)
+
+var string G_BOX = "24 高低（仅作参考线）"
+showBox      = input.bool(true, "显示 24 根最高/最低", group = G_BOX)
+boxLen       = input.int(24, "长度", minval = 2, group = G_BOX)
+
+// ========== SuperTrend ==========
+[supertrend, direction] = ta.supertrend(stFactor, stAtrLen)
+plot(direction < 0 ? supertrend : na, "Up ST", color = color.green, style = plot.style_linebr)
+plot(direction > 0 ? supertrend : na, "Dn ST", color = color.red, style = plot.style_linebr)
+
+// ========== 趋势反转 ==========
+int prev_direction = direction[1]
+bool trend_changed_to_up = direction < 0 and prev_direction > 0
+bool trend_changed_to_down = direction > 0 and prev_direction < 0
+
+// ========== 同趋势内：首次做多/做空参考价与止损线（用于重入条件）==========
+var float firstLongEntryPrice = na
+var float firstLongStopLevel = na
+var float firstShortEntryPrice = na
+var float firstShortStopLevel = na
+
+// 趋势翻转：清空两侧标记（规则 4：反转即重置「本趋势」全部参考）
+if trend_changed_to_up
+    firstLongEntryPrice := na
+    firstLongStopLevel := na
+    firstShortEntryPrice := na
+    firstShortStopLevel := na
+if trend_changed_to_down
+    firstLongEntryPrice := na
+    firstLongStopLevel := na
+    firstShortEntryPrice := na
+    firstShortStopLevel := na
+
+// ========== 入场：反转时顺势首单 ==========
+if trend_changed_to_up
+    if strategy.position_size < 0
+        strategy.close_all(comment = "趋势转多平空")
+    strategy.entry("L", strategy.long, comment = "趋势转多")
+
+if trend_changed_to_down
+    if strategy.position_size > 0
+        strategy.close_all(comment = "趋势转空平多")
+    strategy.entry("S", strategy.short, comment = "趋势转空")
+
+// ========== 记录「本趋势第一次成交」的参考价与止损价 ==========
+// 多头趋势中第一次有持仓时，锁定首次入场价与对应止损价（重入不再改写）
+if direction < 0 and strategy.position_size > 0 and na(firstLongEntryPrice)
+    firstLongEntryPrice := strategy.position_avg_price
+    firstLongStopLevel := firstLongEntryPrice * (1.0 - spotStopPct)
+
+if direction > 0 and strategy.position_size < 0 and na(firstShortEntryPrice)
+    firstShortEntryPrice := strategy.position_avg_price
+    firstShortStopLevel := firstShortEntryPrice * (1.0 + spotStopPct)
+
+// ========== RSI ==========
+float rsi = ta.rsi(close, rsiLen)
+
+// 同趋势内提前平仓：离开超买/超卖区（可视为「背离等」的简化替代）
+bool rsiExitLong =
+     useRsiExit and strategy.position_size > 0 and direction < 0 and
+     rsi[1] >= rsiHighBound and rsi < rsiHighBound
+
+bool rsiExitShort =
+     useRsiExit and strategy.position_size < 0 and direction > 0 and
+     rsi[1] <= rsiLowBound and rsi > rsiLowBound
+
+if rsiExitLong
+    strategy.close("L", comment = "RSI 回落平多")
+
+if rsiExitShort
+    strategy.close("S", comment = "RSI 反弹平空")
+
+// ========== 硬止损 / 止盈（每笔按成交价计算）==========
+float longStop = strategy.position_avg_price * (1.0 - spotStopPct)
+float longLimit = strategy.position_avg_price * (1.0 + profitRate)
+float shortStop = strategy.position_avg_price * (1.0 + spotStopPct)
+float shortLimit = strategy.position_avg_price * (1.0 - profitRate)
+
+if strategy.position_size > 0
+    if useProfit
+        strategy.exit("LX", "L", stop = longStop, limit = longLimit)
+    else
+        strategy.exit("LX", "L", stop = longStop)
+
+if strategy.position_size < 0
+    if useProfit
+        strategy.exit("XS", "S", stop = shortStop, limit = shortLimit)
+    else
+        strategy.exit("XS", "S", stop = shortStop)
+
+// ========== 更优价重入（规则 3）：仍在同一趋势、已平仓、价格越过首次止损线 ==========
+// 做多：当前无多仓、仍为多头 SuperTrend，且已有首次参考止损，收盘价低于该止损 → 再开多
+bool longReentry =
+     direction < 0 and
+     strategy.position_size == 0 and
+     not na(firstLongStopLevel) and
+     close < firstLongStopLevel
+
+if longReentry
+    strategy.entry("L", strategy.long, comment = "更优价重入多")
+
+// 做空：收盘价高于首次空单止损线 → 再开空
+bool shortReentry =
+     direction > 0 and
+     strategy.position_size == 0 and
+     not na(firstShortStopLevel) and
+     close > firstShortStopLevel
+
+if shortReentry
+    strategy.entry("S", strategy.short, comment = "更优价重入空")
+
+// ========== 24 高低参考（修正：用 plot，勿用 plotshape(价格)）==========
+float boxHigh = ta.highest(high, boxLen)
+float boxLow = ta.lowest(low, boxLen)
+plot(showBox ? boxHigh : na, "24H", color = color.new(color.yellow, 30), linewidth = 1)
+plot(showBox ? boxLow : na, "24L", color = color.new(color.purple, 30), linewidth = 1)
+
+// ========== 可视化 ==========
+plotshape(trend_changed_to_up, title = "趋势转多(重置)", location = location.belowbar, color = color.new(color.lime, 0), style = shape.triangleup, size = size.small)
+plotshape(trend_changed_to_down, title = "趋势转空(重置)", location = location.abovebar, color = color.new(color.red, 0), style = shape.triangledown, size = size.small)
+
+plotshape(longReentry, title = "重入多", location = location.belowbar, color = color.new(color.teal, 0), style = shape.circle, size = size.tiny)
+plotshape(shortReentry, title = "重入空", location = location.abovebar, color = color.new(color.orange, 0), style = shape.circle, size = size.tiny)
+
+// 首次止损参考线（本趋势内不变）
+plot(not na(firstLongStopLevel) and direction < 0 ? firstLongStopLevel : na, "首次多单止损参考", color = color.new(color.red, 50), style = plot.style_linebr, linewidth = 1)
+plot(not na(firstShortStopLevel) and direction > 0 ? firstShortStopLevel : na, "首次空单止损参考", color = color.new(color.green, 50), style = plot.style_linebr, linewidth = 1)

@@ -1,0 +1,140 @@
+{
+    "$schema": "https://schema.freqtrade.io/schema.json",
+    "max_open_trades": 4,
+    "stake_currency": "USDT",
+    "stake_amount": 200,
+    "tradable_balance_ratio": 0.90,
+    "fiat_display_currency": "USD",
+    "dry_run": true,
+    "dry_run_wallet": 1000,
+    "cancel_open_orders_on_exit": true,
+    "trading_mode": "futures",
+    "margin_mode": "isolated",
+    "timeframe": "1h",
+    "stoploss": -0.24,
+    "enable_short": true,
+    "position_sync": true,
+    "position_adjustment_enable": false,
+    "minimal_roi": {
+        "0": 0.48
+    },
+    "internals": {
+        "process_throttle_secs": 1
+    },
+    "notification_settings": {
+        "status": [
+            "hello",
+            "filled",
+            "cancelled",
+            "entry_fill",
+            "exit_fill",
+            "entry_cancel",
+            "exit_cancel"
+        ],
+        "entry_fill": true,
+        "exit_fill": true,
+        "entry_cancel": false,
+        "exit_cancel": false,
+        "protection_trigger": false,
+        "protection_trigger_global": false,
+        "show_config": false
+    },
+    "datadir": "/home/ubuntu/noah/freqtrade/user_data/data",
+    "user_data_dir": "/home/ubuntu/noah/freqtrade/user_data",
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "price_last_balance": 0.0,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing": {
+        "price_side": "other",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "exchange": {
+        "name": "binance",
+        "key": "",
+        "key_comment": "Removed sensitive key. Fill from local secrets only.",
+        "secret": "",
+        "secret_comment": "Removed sensitive secret. Fill from local secrets only.",
+        "ccxt_config": {
+            "enableRateLimit": true,
+            "options": {
+                "defaultType": "swap",
+                "sandbox": false,
+                "testnet": false,
+                "adjustForTimeDifference": true
+            },
+            "apiKey": "",
+            "apiKey_comment": "Removed sensitive API key. Fill from local secrets only.",
+            "secret": "",
+            "secret_comment": "Removed sensitive secret. Fill from local secrets only."
+        },
+        "pair_whitelist": [
+            "DOGE/USDT:USDT",
+            "BIO/USDT:USDT",
+            "NEAR/USDT:USDT",
+            "XRP/USDT:USDT",
+            "LINK/USDT:USDT",
+            "TRUMP/USDT:USDT",
+            "MOVE/USDT:USDT",
+            "TURBO/USDT:USDT"
+        ],
+        "pair_blacklist": []
+    },
+    "ohlcv_volume": "quoteVolume",
+    "pairlists": [
+        {
+            "method": "StaticPairList",
+            "pairs": [
+                "DOGE/USDT:USDT",
+                "BIO/USDT:USDT",
+                "NEAR/USDT:USDT",
+                "XRP/USDT:USDT",
+                "LINK/USDT:USDT",
+                "TRUMP/USDT:USDT",
+                "MOVE/USDT:USDT",
+                "TURBO/USDT:USDT"
+            ]
+        }
+    ],
+    "telegram": {
+        "enabled": true,
+        "token": "",
+        "token_comment": "Removed sensitive Telegram bot token.",
+        "chat_id": "7866031576"
+    },
+    "api_server": {
+        "enabled": true,
+        "listen_ip_address": "0.0.0.0",
+        "listen_port": 8585,
+        "verbosity": "error",
+        "enable_openapi": false,
+        "jwt_secret_key": "",
+        "jwt_secret_key_comment": "Removed sensitive API auth secret.",
+        "ws_token": "",
+        "ws_token_comment": "Removed sensitive websocket token.",
+        "CORS_origins": [],
+        "username": "",
+        "username_comment": "Removed sensitive username.",
+        "password": "",
+        "password_comment": "Removed sensitive password."
+    },
+    "bot_name": "freqtrade",
+    "initial_state": "running",
+    "force_entry_enable": false,
+    "logfile": "user_data/logs/freqtrade.log",
+    "loglevel": "INFO",
+    "logformat": "%(asctime)s - %(levelname)s - %(message)s"
+}
